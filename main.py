@@ -16,7 +16,11 @@ import pandas as pd
 import numpy as np 
 import tensorflow as tf 
 import keras 
+import os 
 from keras import layers 
+
+
+os.environ["KERAS_BACKEND"] = "tensorflow"
 
 
 class finHelp:
@@ -89,6 +93,60 @@ class deriveVar(finHelp):
         return rsi_df
 
 
+class ml_preprocess:
+
+    def __init__(self):
+        pass
+
+    def tt_split(self,df):
+        train_df = df.sample(frac=0.2,random_state=2024)
+        test_df = df.drop(train_df.index)
+        return train_df , test_df
+    
+    def df2ds(self,df):
+        df = df.copy(deep=True)
+        target = df.pop('target_col')
+        tfds = tf.data.Dataset.from_tensor_slices((dict(df), target))
+        tfds = tfds.shuffle(buffer_size=len(df))
+        return tfds
+    
+    def batch_ds(self,traindf,testdf,val):
+        trds = traindf.batch(val)
+        tsds = testdf.batch(val)
+        return trds, tsds
+    
+    def numerical_normalization(self):
+        pass
+    
+
+
+class nn_model:
+
+    def __init__(self,l1_neurons,l2_neurons,l1_act,l2_act,out_neurons,out_act):
+        l1_neurons.self = l1_neurons
+        l2_neurons.self = l2_neurons
+        l1_act.self = l1_act
+        l2_act.self = l2_act
+        out_neurons.self = out_neurons
+        out_act.self = out_act
+
+    def feedforward_construct(self):
+        model = keras.Sequential()
+        model.add(layers.Dense(self.l1_neurons, activation=self.l1_act))
+        model.add(layers.Dense(self.l2_neurons, activation=self.l2_act))
+        model.add(layers.Dense(4, activation=self.out_act))
+        return model 
+        
+    def model_compile(self):
+        pass
+
+    def model_train(self):
+        pass
+
+    def model_test(self):
+        pass
+
+
 
 
 
@@ -115,6 +173,7 @@ class deriveVar(finHelp):
 ##################
 
 # Parsing out variables that are not necessary for the inital stage of the mining 
+# Splitting the dataset into test/train sets
 
 
 
