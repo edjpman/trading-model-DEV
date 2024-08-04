@@ -35,7 +35,7 @@ class finHelp:
     def stockdf(self,price):
         tkr_fetch = yf.Ticker(self.tkr)
 
-        if type == 'historical_price':
+        if self.type == 'historical_price':
             hstprice = tkr_fetch.history(start=self.sdate,end=self.edate,interval=self.intv)
 
             if price == 'close':
@@ -50,6 +50,19 @@ class finHelp:
             elif price == 'low':
                 hstprice = hstprice['Low']
                 return hstprice
+            elif price == 'all':
+                hstprice = hstprice[['Open','Close','High','Low']].reset_index()
+                hstprice['Mean'] = (hstprice['High']+hstprice['Low'])/2
+                hstprice['gaps'] = hstprice['Close'].shift(1)
+                hstprice['mean_shift'] = hstprice['Mean'].shift(1)
+                hstprice['gap_change'] = (hstprice['Open']/hstprice['gaps'])-1
+                hstprice['mean_change'] = (hstprice['Mean']/hstprice['mean_shift'])-1
+                hstprice = hstprice.drop(columns=['Open','Low','High','Close','Mean','gaps','mean_shift'])
+                hstprice['Datetime'] = pd.to_datetime(hstprice['Datetime'])
+                hstprice['date'] = hstprice['Datetime'].dt.date
+                hstprice['time'] = hstprice['Datetime'].dt.time
+                hstprice['open_close_hr'] = hstprice['time'].astype(str).apply(lambda x: 1 if x == '09:30:00' else (2 if x == '15:30:00' else 0))
+                return hstprice
             elif price == 'mean':
                 mnprice = (hstprice['High']+hstprice['Low'])/2
                 hstprice['Mean'] = mnprice
@@ -57,7 +70,7 @@ class finHelp:
             else:
                 return ValueError('Must pass "close" or "open"')
 
-        elif type == 'volume':
+        elif self.type == 'volume':
             hstvol = tkr_fetch.history(start=self.sdate,end=self.edate,interval=self.intv)
             hstvol = hstvol['Volume']
             return hstvol
@@ -72,7 +85,7 @@ class deriveVar(finHelp):
         super().__init__(tkr,type,sdate,edate,intv)
     
     def rsi(self,period):
-        closeprc = self.stockdf('historical_price',start=self.sdate,end=self.edate,interval=self.intv,price='close')
+        closeprc = self.stockdf(price='close')
         delta = closeprc.diff()
 
         gain = delta.where(delta > 0, 0)
@@ -90,7 +103,10 @@ class deriveVar(finHelp):
             'RSI': rsi
         })
 
+        rsi_df = rsi_df.reset_index()
+
         return rsi_df
+
 
 
 class ml_preprocess:
@@ -157,6 +173,20 @@ class nn_model:
 ##################
 
 # Adding the data to the dataframe(s), handling missing data/data errors, making conversions, etc.
+
+ticker = 'AAPL'
+start_date = '2023-01-01'
+end_date = '2024-08-02'
+sk = finHelp(tkr='SPY',type='historical_price',sdate=start_date,edate=end_date,intv='1h')
+dv = deriveVar(tkr='SPY', type='historical_price', sdate=start_date, edate=end_date, intv='1h')
+stk3 = sk.stockdf(price='all')
+
+rsi_df = dv.rsi(period=13).drop(columns='Close')
+
+sDf2 = stk3.merge(rsi_df,on='Datetime',how='left')
+sDf2
+
+
 
 
 
