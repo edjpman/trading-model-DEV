@@ -51,13 +51,15 @@ class finHelp:
                 hstprice = hstprice['Low']
                 return hstprice
             elif price == 'all':
-                hstprice = hstprice[['Open','Close','High','Low']].reset_index()
+                hstprice = hstprice[['Open','Close','High','Low','Volume']].reset_index()
                 hstprice['Mean'] = (hstprice['High']+hstprice['Low'])/2
                 hstprice['gaps'] = hstprice['Close'].shift(1)
                 hstprice['mean_shift'] = hstprice['Mean'].shift(1)
                 hstprice['gap_change'] = (hstprice['Open']/hstprice['gaps'])-1
                 hstprice['mean_change'] = (hstprice['Mean']/hstprice['mean_shift'])-1
-                hstprice = hstprice.drop(columns=['Open','Low','High','Close','Mean','gaps','mean_shift'])
+                hstprice['prev_open'] = hstprice['Open'].shift(1)
+                hstprice['prev_close'] = hstprice['Close'].shift(1)
+                # hstprice = hstprice.drop(columns=['Open','Low','High','Close','Mean','gaps','mean_shift'])
                 hstprice['Datetime'] = pd.to_datetime(hstprice['Datetime'])
                 hstprice['date'] = hstprice['Datetime'].dt.date
                 hstprice['time'] = hstprice['Datetime'].dt.time
@@ -174,7 +176,7 @@ class nn_model:
 
 # Adding the data to the dataframe(s), handling missing data/data errors, making conversions, etc.
 
-ticker = 'AAPL'
+ticker = 'SPY'
 start_date = '2023-01-01'
 end_date = '2024-08-02'
 sk = finHelp(tkr='SPY',type='historical_price',sdate=start_date,edate=end_date,intv='1h')
@@ -184,7 +186,15 @@ stk3 = sk.stockdf(price='all')
 rsi_df = dv.rsi(period=13).drop(columns='Close')
 
 sDf2 = stk3.merge(rsi_df,on='Datetime',how='left')
-sDf2
+sDf2['mov_avg'] = sDf2['Mean'].rolling(window=50).mean()
+sDf2['mov_avg_diff'] = (sDf2['mov_avg']/sDf2['Mean'])-1
+sDf2['inside_days'] = sDf2.apply(lambda x: 1 if (x['Open'] < x['prev_open']) and (x['Close'] < x['prev_close']) else 0, axis=1)
+#Need to confirm if it should be on a total volume avg or a rolling value
+sDf2['vol_var'] = (sDf2['Volume']/(sDf2['Volume'].median()))-1
+sDf2['abs_mnChng'] = abs(sDf2['mean_change'])
+#Few Issues: The model may place too much weight on this, could be highly correlated with target variable, may not work properly with the shifting of the target variable
+sDf2['channel_ptrn'] = sDf2['abs_mnChng'].rolling(window=12).mean()
+print(sDf2)
 
 
 
