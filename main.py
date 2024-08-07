@@ -18,7 +18,8 @@ import tensorflow as tf
 import keras 
 import os 
 from keras import layers 
-
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
 
 os.environ["KERAS_BACKEND"] = "tensorflow"
 
@@ -55,7 +56,7 @@ class finHelp:
                 hstprice['Mean'] = (hstprice['High']+hstprice['Low'])/2
                 hstprice['gaps'] = hstprice['Close'].shift(1)
                 hstprice['mean_shift'] = hstprice['Mean'].shift(1)
-                hstprice['gap_change'] = (hstprice['Open']/hstprice['gaps'])-1
+                hstprice['open_day_change'] = (hstprice['Open']/hstprice['gaps'])-1
                 hstprice['mean_change'] = (hstprice['Mean']/hstprice['mean_shift'])-1
                 hstprice['prev_open'] = hstprice['Open'].shift(1)
                 hstprice['prev_close'] = hstprice['Close'].shift(1)
@@ -108,35 +109,51 @@ class deriveVar(finHelp):
         rsi_df = rsi_df.reset_index()
 
         return rsi_df
+    
+    def targetvar(self,df,col):
+        std_dev = df[col].std()
+        return std_dev
 
 
 
 class ml_preprocess:
 
-    def __init__(self):
-        pass
+    def __init__(self,df):
+        self.df = df
 
-    def tt_split(self,df):
-        train_df = df.sample(frac=0.2,random_state=2024)
-        test_df = df.drop(train_df.index)
-        return train_df , test_df
-    
-    def df2ds(self,df):
+    @staticmethod
+    def preprocess_time(df, time_col):
         df = df.copy(deep=True)
-        target = df.pop('target_col')
-        tfds = tf.data.Dataset.from_tensor_slices((dict(df), target))
-        tfds = tfds.shuffle(buffer_size=len(df))
-        return tfds
+        df[time_col] = pd.to_datetime(df[time_col], format='%H:%M:%S').dt.time
+        df['hour'] = df[time_col].apply(lambda x: x.hour + x.minute / 60)
+        df['time_sin'] = np.sin(2 * np.pi * df['hour'] / 24)
+        df['time_cos'] = np.cos(2 * np.pi * df['hour'] / 24)
+        df.drop(columns=[time_col, 'hour'], inplace=True)
+        return df
+
+
+
+    def tt_split(self,target_col,time_col=None):
+        df = self.df.copy(deep=True)
+        features = df.drop(columns=[target_col])
+        target = df[target_col]
+        if time_col is not None:
+            features = ml_preprocess.preprocess_time(features, time_col)
+        X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.2, random_state=2024)
+        numerical_cols = X_train.select_dtypes(include=['float64', 'int64']).columns
+        scaler = StandardScaler()
+        X_train[numerical_cols] = scaler.fit_transform(X_train[numerical_cols])
+        X_test[numerical_cols] = scaler.transform(X_test[numerical_cols])
+
+        return X_train, X_test, y_train, y_test
+    
     
     def batch_ds(self,traindf,testdf,val):
         trds = traindf.batch(val)
         tsds = testdf.batch(val)
         return trds, tsds
     
-    def numerical_normalization(self):
-        pass
     
-
 
 class nn_model:
 
@@ -192,10 +209,19 @@ sDf2['inside_days'] = sDf2.apply(lambda x: 1 if (x['Open'] < x['prev_open']) and
 #Need to confirm if it should be on a total volume avg or a rolling value
 sDf2['vol_var'] = (sDf2['Volume']/(sDf2['Volume'].median()))-1
 sDf2['abs_mnChng'] = abs(sDf2['mean_change'])
+target_level = dv.targetvar(sDf2,'mean_change')
+sDf2['target'] = sDf2['abs_mnChng'].apply(lambda x: 1 if x >= target_level else 0)
+sDf2['adjusted_target'] = sDf2['target'].shift(-10)
 #Few Issues: The model may place too much weight on this, could be highly correlated with target variable, may not work properly with the shifting of the target variable
 sDf2['channel_ptrn'] = sDf2['abs_mnChng'].rolling(window=12).mean()
-print(sDf2)
+sDf2 = sDf2.drop(columns=['Open','Close','High','Low','Mean','gaps','mean_shift','mean_change','prev_open','prev_close','Datetime','date','mov_avg','abs_mnChng','target'])
+sDf2 = sDf2.iloc[50:-10]
 
+
+ml = ml_preprocess(df=sDf2)
+
+X_train, X_test, y_train, y_test = ml.tt_split(target_col='adjusted_target',time_col='time')
+print(X_train)
 
 
 
