@@ -11,6 +11,8 @@
 # Includes python libraries and the importing of helper functions 
 # Importing of data/api calls 
 
+
+
 import yfinance as yf
 import pandas as pd
 import numpy as np 
@@ -64,6 +66,7 @@ class finHelp:
                 hstprice['Datetime'] = pd.to_datetime(hstprice['Datetime'])
                 hstprice['date'] = hstprice['Datetime'].dt.date
                 hstprice['time'] = hstprice['Datetime'].dt.time
+                #Consider NOT scaling this. Although there could be good reason given other continuous variables
                 hstprice['open_close_hr'] = hstprice['time'].astype(str).apply(lambda x: 1 if x == '09:30:00' else (2 if x == '15:30:00' else 0))
                 return hstprice
             elif price == 'mean':
