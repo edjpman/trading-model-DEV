@@ -27,8 +27,14 @@ from tensorflow.keras.layers import Dense, Input
 from tensorflow.keras.optimizers import Adam
 from sklearn.metrics import accuracy_score
 from tensorflow.keras.utils import plot_model
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 
 os.environ["KERAS_BACKEND"] = "tensorflow"
+
+
+import yfinance as yf
 
 class finHelp:
 
@@ -66,12 +72,16 @@ class finHelp:
                 hstprice['mean_change'] = (hstprice['Mean']/hstprice['mean_shift'])-1
                 hstprice['prev_open'] = hstprice['Open'].shift(1)
                 hstprice['prev_close'] = hstprice['Close'].shift(1)
-                # hstprice = hstprice.drop(columns=['Open','Low','High','Close','Mean','gaps','mean_shift'])
                 hstprice['Datetime'] = pd.to_datetime(hstprice['Datetime'])
                 hstprice['date'] = hstprice['Datetime'].dt.date
                 hstprice['time'] = hstprice['Datetime'].dt.time
-                #Consider NOT scaling this. Although there could be good reason given other continuous variables
                 hstprice['open_close_hr'] = hstprice['time'].astype(str).apply(lambda x: 1 if x == '09:30:00' else (2 if x == '15:30:00' else 0))
+                hstprice['mov_avg'] = hstprice['Mean'].rolling(window=50).mean()
+                hstprice['mov_avg_diff'] = (hstprice['mov_avg']/hstprice['Mean'])-1
+                hstprice['inside_days'] = hstprice.apply(lambda x: 1 if (x['Open'] < x['prev_open']) and (x['Close'] < x['prev_close']) else 0, axis=1)
+                hstprice['vol_var'] = (hstprice['Volume']/(hstprice['Volume'].median()))-1
+                hstprice['abs_mnChng'] = abs(hstprice['mean_change'])
+                hstprice['channel_ptrn'] = hstprice['abs_mnChng'].rolling(window=12).mean()
                 return hstprice
             elif price == 'mean':
                 mnprice = (hstprice['High']+hstprice['Low'])/2
@@ -164,38 +174,54 @@ class ml_preprocess:
         return features, target
 
 
-    def batch_ds(self,traindf,testdf,val):
-        trds = traindf.batch(val)
-        tsds = testdf.batch(val)
-        return trds, tsds
-    
     
 
 class nn_model:
 
-    def __init__(self,l1_neurons,l2_neurons,l1_act,l2_act,out_neurons,out_act):
-        l1_neurons.self = l1_neurons
-        l2_neurons.self = l2_neurons
-        l1_act.self = l1_act
-        l2_act.self = l2_act
-        out_neurons.self = out_neurons
-        out_act.self = out_act
+    def __init__(self):
+        pass
 
     def feedforward_construct(self):
-        model = keras.Sequential()
-        model.add(layers.Dense(self.l1_neurons, activation=self.l1_act))
-        model.add(layers.Dense(self.l2_neurons, activation=self.l2_act))
-        model.add(layers.Dense(4, activation=self.out_act))
-        return model
+        model = Sequential()
+        model.add(layers.Dense(input_dim=len(X_train.columns),units=10,activation='relu'))
+        model.add(layers.Dense(input_dim=10,units=1,activation='sigmoid'))
+        model.compile(loss='binary_crossentropy',optimizer=Adam(learning_rate=0.01),metrics=['accuracy'])
+        fitted_model = model.fit(X_train, y_train, epochs=15, batch_size=32)
+        return fitted_model
 
-    def model_compile(self):
+    def model_accuracy(self):
         pass
 
-    def model_train(self):
-        pass
+    def tt_eval(self):
+        y_train_pred_proba = model.predict(X_train)
+        y_test_pred_proba = model.predict(X_test)
+        train_preds_df = pd.DataFrame(y_train_pred_proba, columns=['Predicted'], index=X_train.index)
+        train_preds_df['True Label'] = y_train
+        test_preds_df = pd.DataFrame(y_test_pred_proba, columns=['Predicted'], index=X_test.index)
+        test_preds_df['True Label'] = y_test
+        full_predictions_df = pd.concat([train_preds_df, test_preds_df])
+        full_predictions_df = full_predictions_df.sort_index().reset_index()
 
-    def model_test(self):
-        pass
+        fp0 = full_predictions_df[full_predictions_df['True Label'] == 0]
+        fp1 = full_predictions_df[full_predictions_df['True Label'] == 1]
+
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+        sns.kdeplot(x=fp0['index'], y=fp0['Predicted'], cmap='coolwarm', fill=True, alpha=0.5, ax=ax1)
+        ax1.set_xlabel('Index')
+        ax1.set_ylabel('Value')
+        ax1.set_title('Predictions of True Classification 0')
+
+        sns.kdeplot(x=fp1['index'], y=fp1['Predicted'], cmap='coolwarm', fill=True, alpha=0.5, ax=ax2)
+        ax2.set_xlabel('Index')
+        ax2.set_ylabel('Value')
+        ax2.set_title('Predictions of True Classification 1')
+
+        plt.tight_layout()
+
+        plt.show()
+
 
 
 
@@ -217,18 +243,11 @@ stk3 = sk.stockdf(price='all')
 rsi_df = dv.rsi(period=13).drop(columns='Close')
 
 sDf2 = stk3.merge(rsi_df,on='Datetime',how='left')
-sDf2['mov_avg'] = sDf2['Mean'].rolling(window=50).mean()
-sDf2['mov_avg_diff'] = (sDf2['mov_avg']/sDf2['Mean'])-1
-sDf2['inside_days'] = sDf2.apply(lambda x: 1 if (x['Open'] < x['prev_open']) and (x['Close'] < x['prev_close']) else 0, axis=1)
-#Need to confirm if it should be on a total volume avg or a rolling value
-sDf2['vol_var'] = (sDf2['Volume']/(sDf2['Volume'].median()))-1
-sDf2['abs_mnChng'] = abs(sDf2['mean_change'])
 target_level = dv.targetvar(sDf2,'mean_change')
 sDf2['target'] = sDf2['abs_mnChng'].apply(lambda x: 1 if x >= target_level else 0)
 sDf2['adjusted_target'] = sDf2['target'].shift(-10)
-#Few Issues: The model may place too much weight on this, could be highly correlated with target variable, may not work properly with the shifting of the target variable
-sDf2['channel_ptrn'] = sDf2['abs_mnChng'].rolling(window=12).mean()
-sDf2 = sDf2.drop(columns=['Open','Close','High','Low','Mean','gaps','mean_shift','mean_change','prev_open','prev_close','Datetime','date','mov_avg','abs_mnChng','target'])
+sDf2 = sDf2.drop(columns=['Open','Close','High','Low','Mean','gaps','mean_shift','mean_change',
+                          'prev_open','prev_close','Datetime','date','mov_avg','abs_mnChng','target'])
 sDf2 = sDf2.iloc[50:-10]
 
 
